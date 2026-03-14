@@ -12,6 +12,56 @@ function createConnection() {
 }
 
 /**
+ * Disconnect a single subscriber on an existing connection.
+ */
+async function disconnectOne(conn, pppoeUsername) {
+    const secrets = await conn.write('/ppp/secret/print', [
+        `?name=${pppoeUsername}`,
+    ]);
+
+    if (secrets.length === 0) {
+        return { status: 'error', username: pppoeUsername, error: 'PPPoE secret not found' };
+    }
+
+    await conn.write('/ppp/secret/set', [
+        `=.id=${secrets[0]['.id']}`,
+        '=disabled=yes',
+    ]);
+
+    const active = await conn.write('/ppp/active/print', [
+        `?name=${pppoeUsername}`,
+    ]);
+
+    if (active.length > 0) {
+        await conn.write('/ppp/active/remove', [
+            `=.id=${active[0]['.id']}`,
+        ]);
+    }
+
+    return { status: 'disconnected', username: pppoeUsername };
+}
+
+/**
+ * Reconnect a single subscriber on an existing connection.
+ */
+async function reconnectOne(conn, pppoeUsername) {
+    const secrets = await conn.write('/ppp/secret/print', [
+        `?name=${pppoeUsername}`,
+    ]);
+
+    if (secrets.length === 0) {
+        return { status: 'error', username: pppoeUsername, error: 'PPPoE secret not found' };
+    }
+
+    await conn.write('/ppp/secret/set', [
+        `=.id=${secrets[0]['.id']}`,
+        '=disabled=no',
+    ]);
+
+    return { status: 'reconnected', username: pppoeUsername };
+}
+
+/**
  * Disconnect a subscriber by removing their active PPPoE session
  * and disabling their PPPoE secret.
  */
@@ -20,33 +70,13 @@ async function disconnect(pppoeUsername) {
 
     try {
         await conn.connect();
+        const result = await disconnectOne(conn, pppoeUsername);
 
-        // Disable the PPPoE secret so they can't reconnect
-        const secrets = await conn.write('/ppp/secret/print', [
-            `?name=${pppoeUsername}`,
-        ]);
-
-        if (secrets.length === 0) {
-            throw new Error(`PPPoE secret "${pppoeUsername}" not found`);
+        if (result.status === 'error') {
+            throw new Error(result.error);
         }
 
-        await conn.write('/ppp/secret/set', [
-            `=.id=${secrets[0]['.id']}`,
-            '=disabled=yes',
-        ]);
-
-        // Remove active session if one exists
-        const active = await conn.write('/ppp/active/print', [
-            `?name=${pppoeUsername}`,
-        ]);
-
-        if (active.length > 0) {
-            await conn.write('/ppp/active/remove', [
-                `=.id=${active[0]['.id']}`,
-            ]);
-        }
-
-        return { status: 'disconnected', username: pppoeUsername };
+        return result;
     } finally {
         conn.close();
     }
@@ -61,21 +91,63 @@ async function reconnect(pppoeUsername) {
 
     try {
         await conn.connect();
+        const result = await reconnectOne(conn, pppoeUsername);
 
-        const secrets = await conn.write('/ppp/secret/print', [
-            `?name=${pppoeUsername}`,
-        ]);
-
-        if (secrets.length === 0) {
-            throw new Error(`PPPoE secret "${pppoeUsername}" not found`);
+        if (result.status === 'error') {
+            throw new Error(result.error);
         }
 
-        await conn.write('/ppp/secret/set', [
-            `=.id=${secrets[0]['.id']}`,
-            '=disabled=no',
-        ]);
+        return result;
+    } finally {
+        conn.close();
+    }
+}
 
-        return { status: 'reconnected', username: pppoeUsername };
+/**
+ * Disconnect multiple subscribers using a single connection.
+ */
+async function batchDisconnect(pppoeUsernames) {
+    const conn = createConnection();
+
+    try {
+        await conn.connect();
+
+        const results = [];
+        for (const username of pppoeUsernames) {
+            try {
+                const result = await disconnectOne(conn, username);
+                results.push(result);
+            } catch (err) {
+                results.push({ status: 'error', username, error: err.message });
+            }
+        }
+
+        return results;
+    } finally {
+        conn.close();
+    }
+}
+
+/**
+ * Reconnect multiple subscribers using a single connection.
+ */
+async function batchReconnect(pppoeUsernames) {
+    const conn = createConnection();
+
+    try {
+        await conn.connect();
+
+        const results = [];
+        for (const username of pppoeUsernames) {
+            try {
+                const result = await reconnectOne(conn, username);
+                results.push(result);
+            } catch (err) {
+                results.push({ status: 'error', username, error: err.message });
+            }
+        }
+
+        return results;
     } finally {
         conn.close();
     }
@@ -124,4 +196,11 @@ async function healthCheck() {
     }
 }
 
-module.exports = { disconnect, reconnect, getActiveSessions, healthCheck };
+module.exports = {
+    disconnect,
+    reconnect,
+    batchDisconnect,
+    batchReconnect,
+    getActiveSessions,
+    healthCheck,
+};
