@@ -135,54 +135,168 @@ pm2 startup
 
 This ensures the server auto-restarts on crash or reboot.
 
-## Exposing to the Internet
+## Exposing to the Internet via Cloudflare Tunnel
 
-The billing app on Digital Ocean needs to reach this server. Here are two options:
+The billing app on Digital Ocean needs to reach this local server. Cloudflare Tunnel creates a secure outbound connection from the local machine to Cloudflare — no open ports, no static IP needed, free tier.
 
-### Option A: Cloudflare Tunnel (Recommended)
+```
+[DO Laravel App] → HTTPS → [Cloudflare Edge] → Tunnel → [Local Machine:3000]
+```
 
-No open ports needed. Free tier available.
+### Prerequisites
+
+- A Cloudflare account (free)
+- A domain added to Cloudflare (DNS managed by Cloudflare)
+
+### Step 1: Install cloudflared
+
+**Linux (Debian/Ubuntu):**
+```bash
+curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared.deb
+```
+
+**Linux (Other):**
+```bash
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+chmod +x /usr/local/bin/cloudflared
+```
+
+**macOS:**
+```bash
+brew install cloudflared
+```
+
+Verify installation:
+```bash
+cloudflared --version
+```
+
+### Step 2: Authenticate with Cloudflare
 
 ```bash
-# Install cloudflared
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
-chmod +x cloudflared
+cloudflared tunnel login
+```
 
-# Authenticate
-./cloudflared tunnel login
+This opens a browser. Select the domain you want to use and authorize it. A certificate is saved to `~/.cloudflared/cert.pem`.
 
-# Create tunnel
-./cloudflared tunnel create mikrotik-api
+### Step 3: Create the tunnel
 
-# Configure
-cat > ~/.cloudflared/config.yml << EOF
-tunnel: <tunnel-id>
-credentials-file: ~/.cloudflared/<tunnel-id>.json
+```bash
+cloudflared tunnel create mikrotik-api
+```
+
+This outputs a **Tunnel ID** (a UUID like `a1b2c3d4-...`). Save it — you'll need it next.
+
+### Step 4: Create the config file
+
+```bash
+mkdir -p ~/.cloudflared
+```
+
+Create `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /home/YOUR_USER/.cloudflared/YOUR_TUNNEL_ID.json
 
 ingress:
   - hostname: mikrotik-api.yourdomain.com
     service: http://localhost:3000
   - service: http_status:404
-EOF
-
-# Run
-./cloudflared tunnel run mikrotik-api
 ```
 
-Then in your Laravel `.env`:
+Replace:
+- `YOUR_TUNNEL_ID` — the UUID from Step 3
+- `YOUR_USER` — your Linux username
+- `mikrotik-api.yourdomain.com` — the subdomain you want to use
+
+### Step 5: Create DNS record
+
+```bash
+cloudflared tunnel route dns mikrotik-api mikrotik-api.yourdomain.com
+```
+
+This automatically creates a CNAME record in Cloudflare DNS pointing to your tunnel.
+
+### Step 6: Test the tunnel
+
+```bash
+# Start the API server
+npm start &
+
+# Start the tunnel
+cloudflared tunnel run mikrotik-api
+```
+
+From another machine (or your DO droplet), test it:
+
+```bash
+curl https://mikrotik-api.yourdomain.com/api/health
+```
+
+If you see `{ "status": "ok", "router": "YourRouterName" }`, it's working.
+
+### Step 7: Run tunnel as a system service
+
+So it starts automatically on boot:
+
+```bash
+sudo cloudflared service install
+sudo systemctl enable cloudflared
+sudo systemctl start cloudflared
+```
+
+Check status:
+```bash
+sudo systemctl status cloudflared
+```
+
+### Full production startup order
+
+Both the API server and the tunnel need to run on boot:
+
+```bash
+# 1. API server via PM2 (from earlier setup)
+pm2 start src/index.js --name mikrotik-api
+pm2 save
+pm2 startup
+
+# 2. Cloudflare Tunnel via systemd
+sudo cloudflared service install
+sudo systemctl enable cloudflared
+```
+
+### Laravel .env configuration
+
+Once the tunnel is running, add to your Laravel app's `.env` on Digital Ocean:
 
 ```
 MIKROTIK_API_URL=https://mikrotik-api.yourdomain.com
-MIKROTIK_API_KEY=your-api-key
+MIKROTIK_API_KEY=your-api-key-here
 ```
 
-### Option B: Static IP + Firewall
+### Optional: Add Cloudflare Access (extra security)
 
-If your ISP site has a static public IP:
+For an additional authentication layer at the Cloudflare edge (before traffic even reaches your server):
 
-1. Forward port 3000 (or a custom port) on your edge router to the local machine
-2. Restrict access to only your Digital Ocean droplet's IP
-3. Use HTTPS (add a reverse proxy like Nginx with Let's Encrypt)
+1. Go to **Cloudflare Dashboard > Zero Trust > Access > Applications**
+2. Click **Add an application > Self-hosted**
+3. Set the domain to `mikrotik-api.yourdomain.com`
+4. Add a **Service Auth** policy with a **Service Token**
+5. Generate the service token and add the headers to your Laravel HTTP calls:
+
+```php
+Http::withHeaders([
+    'X-API-Key' => config('services.mikrotik.key'),
+    'CF-Access-Client-Id' => config('services.mikrotik.cf_client_id'),
+    'CF-Access-Client-Secret' => config('services.mikrotik.cf_client_secret'),
+])->post(config('services.mikrotik.url') . '/api/disconnect', [
+    'pppoe_username' => $pppoeUsername,
+]);
+```
+
+This gives you three layers: Cloudflare Access → IP Whitelist → API Key.
 
 ## API Endpoints
 
