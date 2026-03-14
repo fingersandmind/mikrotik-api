@@ -22,7 +22,24 @@ Local API server that communicates with MikroTik RouterOS. Designed to run on-si
 
 ## Setup
 
-### 1. Enable RouterOS API on MikroTik
+### 1. Get your MikroTik connection details
+
+You need two values from the MikroTik router — ask your client or check WinBox:
+
+**Host (Router IP):**
+- This is the same IP address used to connect to WinBox
+- In WinBox, go to **IP > Addresses** to see the router's LAN IP
+- Typically something like `192.168.88.1`
+
+**Port (API Port):**
+- In WinBox, go to **IP > Services** — look for the `api` service
+- Default is **8728**
+
+These go into your `.env` file as `MIKROTIK_HOST` and `MIKROTIK_PORT`.
+
+> **Note:** Since this server runs on the same local network as the router, you use the router's local/LAN IP — not a public IP.
+
+### 2. Enable RouterOS API on MikroTik
 
 Open WinBox and go to **IP > Services**. Make sure the `api` service is enabled:
 
@@ -41,7 +58,7 @@ Alternatively, via terminal:
 
 *(Replace `192.168.88.100` with the local IP of the machine running this server)*
 
-### 2. Create a dedicated API user on MikroTik
+### 3. Create a dedicated API user on MikroTik
 
 Don't use the admin account. Create a limited user via WinBox or terminal:
 
@@ -50,7 +67,7 @@ Don't use the admin account. Create a limited user via WinBox or terminal:
 /user add name=billing-api password=strong-password-here group=api-access
 ```
 
-### 3. Install and configure
+### 4. Install and configure
 
 ```bash
 git clone <your-repo-url>
@@ -76,7 +93,7 @@ To generate an API key:
 openssl rand -hex 32
 ```
 
-### 4. Test the connection
+### 5. Test the connection
 
 ```bash
 npm run dev
@@ -94,7 +111,7 @@ Expected response:
 { "status": "ok", "router": "YourRouterName" }
 ```
 
-### 5. Run in production
+### 6. Run in production
 
 Use [PM2](https://pm2.io/) to keep the server running:
 
