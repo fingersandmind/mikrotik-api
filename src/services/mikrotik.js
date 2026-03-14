@@ -1,6 +1,12 @@
 const { RouterOSAPI } = require('node-routeros');
 const config = require('../config');
 
+const BATCH_DELAY_MS = config.batchDelayMs;
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function createConnection() {
     return new RouterOSAPI({
         host: config.mikrotik.host,
@@ -113,12 +119,18 @@ async function batchDisconnect(pppoeUsernames) {
         await conn.connect();
 
         const results = [];
-        for (const username of pppoeUsernames) {
+        for (let i = 0; i < pppoeUsernames.length; i++) {
+            const username = pppoeUsernames[i];
             try {
                 const result = await disconnectOne(conn, username);
                 results.push(result);
             } catch (err) {
                 results.push({ status: 'error', username, error: err.message });
+            }
+
+            // Delay between operations to avoid overwhelming the router
+            if (i < pppoeUsernames.length - 1 && BATCH_DELAY_MS > 0) {
+                await delay(BATCH_DELAY_MS);
             }
         }
 
@@ -138,12 +150,17 @@ async function batchReconnect(pppoeUsernames) {
         await conn.connect();
 
         const results = [];
-        for (const username of pppoeUsernames) {
+        for (let i = 0; i < pppoeUsernames.length; i++) {
+            const username = pppoeUsernames[i];
             try {
                 const result = await reconnectOne(conn, username);
                 results.push(result);
             } catch (err) {
                 results.push({ status: 'error', username, error: err.message });
+            }
+
+            if (i < pppoeUsernames.length - 1 && BATCH_DELAY_MS > 0) {
+                await delay(BATCH_DELAY_MS);
             }
         }
 
