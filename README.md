@@ -81,16 +81,27 @@ Edit `.env`:
 ```
 PORT=3000
 API_KEY=generate-a-strong-key-here
+ALLOWED_IPS=123.45.67.89
 MIKROTIK_HOST=192.168.88.1
 MIKROTIK_PORT=8728
 MIKROTIK_USER=billing-api
 MIKROTIK_PASSWORD=strong-password-here
 ```
 
+- **API_KEY** — shared secret between this server and your Laravel app
+- **ALLOWED_IPS** — your Digital Ocean droplet's public IP (comma-separated for multiple)
+
 To generate an API key:
 
 ```bash
 openssl rand -hex 32
+```
+
+To find your DO droplet's IP:
+
+```bash
+# Run this on your Digital Ocean server
+curl ifconfig.me
 ```
 
 ### 5. Test the connection
@@ -259,6 +270,29 @@ if ($response->successful()) {
 }
 ```
 
+## Security
+
+This server has multiple layers of protection:
+
+| Layer | What it does |
+|-------|-------------|
+| **IP Whitelist** | Only your DO droplet's IP can reach the server. All other IPs get `403 Forbidden`. |
+| **API Key** | Every request (except health check) must include a valid `X-API-Key` header. |
+| **Rate Limiting** | Max 30 requests per minute per IP to prevent abuse. |
+| **Timing-Safe Auth** | API key comparison uses `crypto.timingSafeEqual` to prevent timing attacks. |
+| **Helmet** | Sets secure HTTP headers (no MIME sniffing, XSS protection, etc.). |
+| **Request Logging** | All requests are logged with IP, method, path, status, and duration. |
+| **JSON Size Limit** | Request body limited to 10KB to prevent payload abuse. |
+| **No Fingerprinting** | `X-Powered-By` header is disabled. |
+| **Catch-All 404** | Unknown routes return 404 — no information leakage. |
+
+**Production checklist:**
+- [ ] Set `ALLOWED_IPS` to your DO droplet's IP
+- [ ] Generate a strong `API_KEY` with `openssl rand -hex 32`
+- [ ] Create a dedicated MikroTik user (don't use admin)
+- [ ] Use Cloudflare Tunnel or restrict firewall to DO IP only
+- [ ] Use HTTPS if exposing directly (not needed with Cloudflare Tunnel)
+
 ## Troubleshooting
 
 | Problem | Solution |
@@ -268,3 +302,5 @@ if ($response->successful()) {
 | `Cannot connect` | Make sure this server is on the same LAN as the MikroTik. Check firewall rules. |
 | `PPPoE secret not found` | The `pppoe_username` doesn't match any secret on the router. Verify the name in **PPP > Secrets**. |
 | `Login failure` | Wrong credentials in `.env`. Verify the user exists and has API access on the router. |
+| `403 Forbidden` | Your IP is not in `ALLOWED_IPS`. Check your DO droplet's public IP with `curl ifconfig.me`. |
+| `429 Too Many Requests` | Rate limit hit. Wait a minute or increase the limit in `src/index.js`. |
