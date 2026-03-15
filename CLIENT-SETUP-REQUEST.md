@@ -1,6 +1,4 @@
-# MikroTik Setup Request for Client
-
-Hi! We're setting up an integration between our billing system and your MikroTik router so we can automatically disconnect and reconnect subscribers based on their payment status.
+# MikroTik Setup Request
 
 To get this working, I need you to do a few things on the MikroTik side. Everything is done through WinBox.
 
