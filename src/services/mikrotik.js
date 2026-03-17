@@ -8,6 +8,13 @@ function delay(ms) {
 }
 
 /**
+ * Safely close a RouterOS connection, ignoring errors.
+ */
+function safeClose(conn) {
+    try { conn.close(); } catch { /* already closed or errored */ }
+}
+
+/**
  * Create a connection using provided router config, or fall back to .env defaults.
  */
 function createConnection(router, host) {
@@ -125,7 +132,7 @@ async function disconnect(pppoeUsername, profile, router) {
 
         return result;
     } finally {
-        conn.close();
+        safeClose(conn);
     }
 }
 
@@ -145,7 +152,7 @@ async function reconnect(pppoeUsername, profile, router) {
 
         return result;
     } finally {
-        conn.close();
+        safeClose(conn);
     }
 }
 
@@ -173,7 +180,7 @@ async function batchDisconnect(pppoeUsernames, profile, router) {
 
         return results;
     } finally {
-        conn.close();
+        safeClose(conn);
     }
 }
 
@@ -201,7 +208,7 @@ async function batchReconnect(pppoeUsernames, profile, router) {
 
         return results;
     } finally {
-        conn.close();
+        safeClose(conn);
     }
 }
 
@@ -222,7 +229,7 @@ async function getActiveSessions(router) {
             callerID: s['caller-id'],
         }));
     } finally {
-        conn.close();
+        safeClose(conn);
     }
 }
 
@@ -242,14 +249,26 @@ async function getSecretStatus(pppoeUsername, router) {
         }
 
         const secret = secrets[0];
+
+        // Check if there's an active session for uptime and IP
+        const active = await conn.write('/ppp/active/print', [
+            `?name=${pppoeUsername}`,
+        ]);
+
+        const session = active.length > 0 ? active[0] : null;
+
         return {
             found: true,
             name: secret.name,
             profile: secret.profile,
             disabled: secret.disabled === 'true',
+            active: session !== null,
+            uptime: session?.uptime || null,
+            address: session?.address || null,
+            callerID: session?.['caller-id'] || null,
         };
     } finally {
-        conn.close();
+        safeClose(conn);
     }
 }
 
@@ -269,7 +288,7 @@ async function getProfiles(router) {
             rateLimit: p['rate-limit'] || '',
         }));
     } finally {
-        conn.close();
+        safeClose(conn);
     }
 }
 
@@ -281,7 +300,6 @@ async function healthCheck(router) {
 
     try {
         const identity = await conn.write('/system/identity/print');
-        conn.close();
 
         return {
             status: 'ok',
@@ -289,6 +307,42 @@ async function healthCheck(router) {
         };
     } catch (err) {
         return { status: 'error', message: err.message };
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
+ * Create a new PPPoE secret on the router.
+ */
+async function createSecret(pppoeUsername, pppoePassword, profile, router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        // Check if secret already exists
+        const existing = await conn.write('/ppp/secret/print', [
+            `?name=${pppoeUsername}`,
+        ]);
+
+        if (existing.length > 0) {
+            return { status: 'exists', username: pppoeUsername, profile: existing[0].profile };
+        }
+
+        const params = [
+            `=name=${pppoeUsername}`,
+            `=password=${pppoePassword}`,
+            `=service=pppoe`,
+        ];
+
+        if (profile) {
+            params.push(`=profile=${profile}`);
+        }
+
+        await conn.write('/ppp/secret/add', params);
+
+        return { status: 'created', username: pppoeUsername, profile: profile || 'default' };
+    } finally {
+        safeClose(conn);
     }
 }
 
@@ -301,4 +355,5 @@ module.exports = {
     getSecretStatus,
     getProfiles,
     healthCheck,
+    createSecret,
 };

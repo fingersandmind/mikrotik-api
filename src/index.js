@@ -1,3 +1,6 @@
+// Must be loaded before any RouterOS usage
+require('./patches/routeros-empty-reply');
+
 const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -6,6 +9,16 @@ const apiKeyAuth = require('./middleware/auth');
 const ipWhitelist = require('./middleware/ipWhitelist');
 const requestLogger = require('./middleware/requestLogger');
 const routerRoutes = require('./routes/router');
+
+// Prevent process from dying on uncaught errors
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught exception (process kept alive):', err.message);
+    console.error(err.stack);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection (process kept alive):', reason);
+});
 
 const app = express();
 
@@ -46,6 +59,15 @@ app.use('/api', apiKeyAuth, routerRoutes);
 // Block all other routes
 app.use((req, res) => {
     res.status(404).json({ error: 'Not found' });
+});
+
+// Express error handler — catches any unhandled errors in routes
+app.use((err, req, res, _next) => {
+    console.error(`Express error on ${req.method} ${req.path}:`, err.message);
+    console.error(err.stack);
+    if (!res.headersSent) {
+        res.status(500).json({ error: err.message || 'Internal server error' });
+    }
 });
 
 app.listen(config.port, () => {

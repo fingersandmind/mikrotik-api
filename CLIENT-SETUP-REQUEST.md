@@ -85,6 +85,19 @@ Once you've completed the steps above, please send me the following:
 
 ---
 
+## Why we use a local API server (instead of connecting directly to the router)
+
+MikroTik does provide a built-in API (that's what we're enabling on port 8728), but our billing system can't connect to it directly. Here's why:
+
+- **The router is on a private network** — It sits on a local LAN (e.g., `192.168.88.1`). Our billing app is hosted on Digital Ocean, so it physically can't reach the router unless we expose port 8728 to the internet — which would be a major security risk.
+- **The MikroTik API uses a custom binary protocol** — It's not HTTP/REST, so our Laravel billing app can't talk to it natively. The local server translates simple REST calls (like `POST /disconnect`) into RouterOS API commands.
+- **Security layering** — Instead of exposing the raw router API, the local server adds IP whitelisting, API key authentication, and rate limiting. Combined with Cloudflare Tunnel, traffic reaches the router through 3 layers of security — without opening any ports on your firewall.
+- **Simpler integration** — Your router stays untouched on the LAN. The local server handles all the complexity, and the billing app just makes simple HTTP calls.
+
+In short: we *are* using the MikroTik API — the local server is just a secure bridge so our remote billing app can reach it safely.
+
+---
+
 ## Questions?
 
 If anything is unclear or you need help with any of these steps, just let me know!
