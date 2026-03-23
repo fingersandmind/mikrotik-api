@@ -141,6 +141,21 @@ router.get('/secret-status/:username', async (req, res) => {
     }
 });
 
+router.post('/find-secret', async (req, res) => {
+    const { search } = req.body;
+
+    if (!search) {
+        return res.status(400).json({ error: 'search is required' });
+    }
+
+    try {
+        const result = await mikrotik.findSecret(search, getRouter(req));
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.post('/secret-status', async (req, res) => {
     const { pppoe_username } = req.body;
 

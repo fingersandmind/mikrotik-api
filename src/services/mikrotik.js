@@ -313,6 +313,60 @@ async function healthCheck(router) {
 }
 
 /**
+ * Find a PPPoE secret by searching: password → username → comment.
+ * Returns the first match found in that priority order.
+ */
+async function findSecret(searchValue, router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const allSecrets = await conn.write('/ppp/secret/print');
+
+        // Search by password first
+        let match = allSecrets.find((s) => s.password === searchValue);
+        let matchedBy = 'password';
+
+        // Then by username
+        if (!match) {
+            match = allSecrets.find((s) => s.name === searchValue);
+            matchedBy = 'name';
+        }
+
+        // Then by comment
+        if (!match) {
+            match = allSecrets.find((s) => s.comment && s.comment === searchValue);
+            matchedBy = 'comment';
+        }
+
+        if (!match) {
+            return { found: false };
+        }
+
+        // Check if there's an active session
+        const active = await conn.write('/ppp/active/print', [
+            `?name=${match.name}`,
+        ]);
+
+        const session = active.length > 0 ? active[0] : null;
+
+        return {
+            found: true,
+            matchedBy,
+            name: match.name,
+            profile: match.profile,
+            comment: match.comment || null,
+            disabled: match.disabled === 'true',
+            active: session !== null,
+            uptime: session?.uptime || null,
+            address: session?.address || null,
+            callerID: session?.['caller-id'] || null,
+        };
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
  * Create a new PPPoE secret on the router.
  */
 async function createSecret(pppoeUsername, pppoePassword, profile, router) {
@@ -353,6 +407,7 @@ module.exports = {
     batchReconnect,
     getActiveSessions,
     getSecretStatus,
+    findSecret,
     getProfiles,
     healthCheck,
     createSecret,
