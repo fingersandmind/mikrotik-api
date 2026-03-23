@@ -449,6 +449,44 @@ async function resolveSecrets(subscribers, router) {
 }
 
 /**
+ * Get all PPPoE secrets merged with active session data.
+ * Opens one connection, runs two queries, and merges by username.
+ */
+async function getSecretsWithSessions(router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const [secrets, active] = await Promise.all([
+            conn.write('/ppp/secret/print'),
+            conn.write('/ppp/active/print'),
+        ]);
+
+        // Build active session lookup by name
+        const activeByName = new Map();
+        for (const s of active) {
+            activeByName.set(s.name, s);
+        }
+
+        return secrets.map((secret) => {
+            const session = activeByName.get(secret.name);
+            return {
+                name: secret.name,
+                password: secret.password || null,
+                profile: secret.profile || null,
+                comment: secret.comment || null,
+                disabled: secret.disabled === 'true',
+                active: !!session,
+                uptime: session?.uptime || null,
+                address: session?.address || null,
+                callerID: session?.['caller-id'] || null,
+            };
+        });
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
  * Create a new PPPoE secret on the router.
  */
 async function createSecret(pppoeUsername, pppoePassword, profile, router) {
@@ -491,6 +529,7 @@ module.exports = {
     getSecretStatus,
     findSecret,
     resolveSecrets,
+    getSecretsWithSessions,
     getProfiles,
     healthCheck,
     createSecret,

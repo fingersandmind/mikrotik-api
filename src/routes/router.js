@@ -175,6 +175,15 @@ router.post('/resolve-secrets', async (req, res) => {
     }
 });
 
+router.post('/secrets-with-sessions', async (req, res) => {
+    try {
+        const result = await mikrotik.getSecretsWithSessions(getRouter(req));
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.post('/secret-status', async (req, res) => {
     const { pppoe_username } = req.body;
 
