@@ -156,6 +156,25 @@ router.post('/find-secret', async (req, res) => {
     }
 });
 
+router.post('/resolve-secrets', async (req, res) => {
+    const { subscribers } = req.body;
+
+    if (!Array.isArray(subscribers) || subscribers.length === 0) {
+        return res.status(400).json({ error: 'subscribers must be a non-empty array' });
+    }
+
+    if (subscribers.length > MAX_BATCH_SIZE) {
+        return res.status(400).json({ error: `Maximum ${MAX_BATCH_SIZE} subscribers per batch` });
+    }
+
+    try {
+        const result = await mikrotik.resolveSecrets(subscribers, getRouter(req));
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.post('/secret-status', async (req, res) => {
     const { pppoe_username } = req.body;
 

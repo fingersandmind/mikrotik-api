@@ -367,6 +367,88 @@ async function findSecret(searchValue, router) {
 }
 
 /**
+ * Batch-resolve PPPoE usernames from an array of subscribers.
+ * Fetches all secrets once and resolves each subscriber using Map lookups.
+ * Resolution priority per subscriber: name match on username,
+ * then password/name/comment match on password,
+ * then password/comment match on username.
+ */
+async function resolveSecrets(subscribers, router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const allSecrets = await conn.write('/ppp/secret/print');
+
+        // Build lookup maps (first match wins for duplicates)
+        const byName = new Map();
+        const byPassword = new Map();
+        const byComment = new Map();
+
+        for (const s of allSecrets) {
+            if (s.name && !byName.has(s.name)) byName.set(s.name, s);
+            if (s.password && !byPassword.has(s.password)) byPassword.set(s.password, s);
+            if (s.comment && !byComment.has(s.comment)) byComment.set(s.comment, s);
+        }
+
+        const results = subscribers.map((sub) => {
+            const { id, pppoe_username, pppoe_password } = sub;
+            let match = null;
+            let matchedBy = null;
+
+            // 1. Exact name match on username
+            if (pppoe_username && byName.has(pppoe_username)) {
+                match = byName.get(pppoe_username);
+                matchedBy = 'name';
+            }
+
+            // 2. Search by password value: password → name → comment
+            if (!match && pppoe_password) {
+                if (byPassword.has(pppoe_password)) {
+                    match = byPassword.get(pppoe_password);
+                    matchedBy = 'password';
+                } else if (byName.has(pppoe_password)) {
+                    match = byName.get(pppoe_password);
+                    matchedBy = 'name';
+                } else if (byComment.has(pppoe_password)) {
+                    match = byComment.get(pppoe_password);
+                    matchedBy = 'comment';
+                }
+            }
+
+            // 3. Search by username value: password → comment
+            if (!match && pppoe_username) {
+                if (byPassword.has(pppoe_username)) {
+                    match = byPassword.get(pppoe_username);
+                    matchedBy = 'password';
+                } else if (byComment.has(pppoe_username)) {
+                    match = byComment.get(pppoe_username);
+                    matchedBy = 'comment';
+                }
+            }
+
+            if (!match) {
+                return { id, found: false };
+            }
+
+            return {
+                id,
+                found: true,
+                matchedBy,
+                name: match.name,
+                profile: match.profile,
+                comment: match.comment || null,
+            };
+        });
+
+        const resolved = results.filter((r) => r.found).length;
+
+        return { total: subscribers.length, resolved, unresolved: subscribers.length - resolved, results };
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
  * Create a new PPPoE secret on the router.
  */
 async function createSecret(pppoeUsername, pppoePassword, profile, router) {
@@ -408,6 +490,7 @@ module.exports = {
     getActiveSessions,
     getSecretStatus,
     findSecret,
+    resolveSecrets,
     getProfiles,
     healthCheck,
     createSecret,
