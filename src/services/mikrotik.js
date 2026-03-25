@@ -266,6 +266,7 @@ async function getSecretStatus(pppoeUsername, router) {
             uptime: session?.uptime || null,
             address: session?.address || null,
             callerID: session?.['caller-id'] || null,
+            lastLoggedOut: secret['last-logged-out'] || null,
         };
     } finally {
         safeClose(conn);
@@ -360,6 +361,7 @@ async function findSecret(searchValue, router) {
             uptime: session?.uptime || null,
             address: session?.address || null,
             callerID: session?.['caller-id'] || null,
+            lastLoggedOut: match['last-logged-out'] || null,
         };
     } finally {
         safeClose(conn);
@@ -479,6 +481,7 @@ async function getSecretsWithSessions(router) {
                 uptime: session?.uptime || null,
                 address: session?.address || null,
                 callerID: session?.['caller-id'] || null,
+                lastLoggedOut: secret['last-logged-out'] || null,
             };
         });
     } finally {
