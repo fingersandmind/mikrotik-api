@@ -321,22 +321,24 @@ async function findSecret(searchValue, router) {
     const conn = await connectWithFallback(router);
 
     try {
-        const allSecrets = await conn.write('/ppp/secret/print');
+        // Use filtered queries instead of fetching all secrets
+        // (unfiltered /ppp/secret/print may fail on some routers due to permissions)
+        const searches = [
+            { filter: `?password=${searchValue}`, matchedBy: 'password' },
+            { filter: `?name=${searchValue}`, matchedBy: 'name' },
+            { filter: `?comment=${searchValue}`, matchedBy: 'comment' },
+        ];
 
-        // Search by password first
-        let match = allSecrets.find((s) => s.password === searchValue);
-        let matchedBy = 'password';
+        let match = null;
+        let matchedBy = null;
 
-        // Then by username
-        if (!match) {
-            match = allSecrets.find((s) => s.name === searchValue);
-            matchedBy = 'name';
-        }
-
-        // Then by comment
-        if (!match) {
-            match = allSecrets.find((s) => s.comment && s.comment === searchValue);
-            matchedBy = 'comment';
+        for (const search of searches) {
+            const results = await conn.write('/ppp/secret/print', [search.filter]);
+            if (results.length > 0) {
+                match = results[0];
+                matchedBy = search.matchedBy;
+                break;
+            }
         }
 
         if (!match) {
