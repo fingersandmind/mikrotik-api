@@ -593,6 +593,96 @@ async function getHotspotActive(router) {
     }
 }
 
+/**
+ * Build a RouterOS attribute array from a partial JS object.
+ * Only includes fields with non-null/undefined values.
+ */
+function hotspotProfileAttrs(attrs) {
+    const out = [];
+    if (attrs.name) out.push(`=name=${attrs.name}`);
+    if (attrs.rateLimit != null) out.push(`=rate-limit=${attrs.rateLimit}`);
+    if (attrs.sessionTimeout != null) out.push(`=session-timeout=${attrs.sessionTimeout}`);
+    if (attrs.sharedUsers != null) out.push(`=shared-users=${attrs.sharedUsers}`);
+    return out;
+}
+
+/**
+ * Create a hotspot user profile on the router.
+ * Returns { status: 'exists' } if a profile with the same name already exists.
+ */
+async function createHotspotProfile(name, attrs, router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const existing = await conn.write('/ip/hotspot/user/profile/print', [
+            `?name=${name}`,
+        ]);
+
+        if (existing.length > 0) {
+            return { status: 'exists', name };
+        }
+
+        await conn.write('/ip/hotspot/user/profile/add', hotspotProfileAttrs({ name, ...attrs }));
+
+        return { status: 'created', name };
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
+ * Update an existing hotspot user profile by name.
+ */
+async function updateHotspotProfile(name, attrs, router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const existing = await conn.write('/ip/hotspot/user/profile/print', [
+            `?name=${name}`,
+        ]);
+
+        if (existing.length === 0) {
+            return { status: 'not-found', name };
+        }
+
+        const setArgs = [
+            `=.id=${existing[0]['.id']}`,
+            ...hotspotProfileAttrs(attrs),
+        ];
+
+        await conn.write('/ip/hotspot/user/profile/set', setArgs);
+
+        return { status: 'updated', name };
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
+ * Delete a hotspot user profile by name.
+ */
+async function deleteHotspotProfile(name, router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const existing = await conn.write('/ip/hotspot/user/profile/print', [
+            `?name=${name}`,
+        ]);
+
+        if (existing.length === 0) {
+            return { status: 'not-found', name };
+        }
+
+        await conn.write('/ip/hotspot/user/profile/remove', [
+            `=.id=${existing[0]['.id']}`,
+        ]);
+
+        return { status: 'deleted', name };
+    } finally {
+        safeClose(conn);
+    }
+}
+
 module.exports = {
     disconnect,
     reconnect,
@@ -609,4 +699,7 @@ module.exports = {
     getHotspotProfiles,
     getHotspotUsers,
     getHotspotActive,
+    createHotspotProfile,
+    updateHotspotProfile,
+    deleteHotspotProfile,
 };
