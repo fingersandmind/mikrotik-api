@@ -237,4 +237,31 @@ router.post('/health', async (req, res) => {
     }
 });
 
+router.post('/hotspot/profiles', async (req, res) => {
+    try {
+        const profiles = await mikrotik.getHotspotProfiles(getRouter(req));
+        res.json({ profiles });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/hotspot/users', async (req, res) => {
+    try {
+        const users = await mikrotik.getHotspotUsers(getRouter(req));
+        res.json({ users });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/hotspot/active', async (req, res) => {
+    try {
+        const active = await mikrotik.getHotspotActive(getRouter(req));
+        res.json({ active });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

@@ -525,6 +525,74 @@ async function createSecret(pppoeUsername, pppoePassword, profile, router) {
     }
 }
 
+/**
+ * List all hotspot user profiles on the router.
+ */
+async function getHotspotProfiles(router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const profiles = await conn.write('/ip/hotspot/user/profile/print');
+
+        return profiles.map((p) => ({
+            name: p.name,
+            sessionTimeout: p['session-timeout'] || null,
+            sharedUsers: p['shared-users'] || null,
+            rateLimit: p['rate-limit'] || null,
+        }));
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
+ * List all hotspot users on the router (diagnostics).
+ */
+async function getHotspotUsers(router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const users = await conn.write('/ip/hotspot/user/print');
+
+        return users.map((u) => ({
+            name: u.name,
+            profile: u.profile || null,
+            limitUptime: u['limit-uptime'] || null,
+            limitBytesTotal: u['limit-bytes-total'] || null,
+            uptime: u.uptime || null,
+            bytesIn: u['bytes-in'] || null,
+            bytesOut: u['bytes-out'] || null,
+            disabled: u.disabled === 'true',
+            comment: u.comment || null,
+        }));
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
+ * List currently active hotspot sessions on the router.
+ */
+async function getHotspotActive(router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const active = await conn.write('/ip/hotspot/active/print');
+
+        return active.map((a) => ({
+            user: a.user,
+            address: a.address,
+            macAddress: a['mac-address'],
+            uptime: a.uptime,
+            sessionTimeLeft: a['session-time-left'] || null,
+            bytesIn: a['bytes-in'] || null,
+            bytesOut: a['bytes-out'] || null,
+        }));
+    } finally {
+        safeClose(conn);
+    }
+}
+
 module.exports = {
     disconnect,
     reconnect,
@@ -538,4 +606,7 @@ module.exports = {
     getProfiles,
     healthCheck,
     createSecret,
+    getHotspotProfiles,
+    getHotspotUsers,
+    getHotspotActive,
 };
