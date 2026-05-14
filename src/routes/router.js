@@ -317,4 +317,42 @@ router.post('/hotspot/profiles/delete', async (req, res) => {
     }
 });
 
+router.post('/hotspot/users/create', async (req, res) => {
+    const { name, profile, limitUptime, limitBytesTotal, comment } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ error: 'name is required' });
+    }
+    if (!profile) {
+        return res.status(400).json({ error: 'profile is required' });
+    }
+
+    try {
+        const result = await mikrotik.createHotspotUser(
+            name,
+            profile,
+            { limitUptime, limitBytesTotal, comment },
+            getRouter(req),
+        );
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/hotspot/users/delete', async (req, res) => {
+    const { name } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ error: 'name is required' });
+    }
+
+    try {
+        const result = await mikrotik.deleteHotspotUser(name, getRouter(req));
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

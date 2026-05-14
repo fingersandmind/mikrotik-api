@@ -683,6 +683,67 @@ async function deleteHotspotProfile(name, router) {
     }
 }
 
+/**
+ * Build a RouterOS hotspot-user attribute array from a partial JS object.
+ */
+function hotspotUserAttrs(attrs) {
+    const out = [];
+    if (attrs.name) out.push(`=name=${attrs.name}`);
+    if (attrs.password != null) out.push(`=password=${attrs.password}`);
+    if (attrs.profile) out.push(`=profile=${attrs.profile}`);
+    if (attrs.limitUptime != null) out.push(`=limit-uptime=${attrs.limitUptime}`);
+    if (attrs.limitBytesTotal != null) out.push(`=limit-bytes-total=${attrs.limitBytesTotal}`);
+    if (attrs.comment != null) out.push(`=comment=${attrs.comment}`);
+    return out;
+}
+
+/**
+ * Create a hotspot user (voucher) on the router.
+ * Returns { status: 'exists' } if a user with this name already exists.
+ */
+async function createHotspotUser(name, profile, attrs, router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const existing = await conn.write('/ip/hotspot/user/print', [`?name=${name}`]);
+        if (existing.length > 0) {
+            return { status: 'exists', name };
+        }
+
+        await conn.write('/ip/hotspot/user/add', hotspotUserAttrs({
+            name,
+            password: name, // single-code convention: user.name == user.password
+            profile,
+            ...attrs,
+        }));
+
+        return { status: 'created', name };
+    } finally {
+        safeClose(conn);
+    }
+}
+
+/**
+ * Delete a hotspot user by name.
+ * Returns { status: 'not-found' } if no user matches.
+ */
+async function deleteHotspotUser(name, router) {
+    const conn = await connectWithFallback(router);
+
+    try {
+        const existing = await conn.write('/ip/hotspot/user/print', [`?name=${name}`]);
+        if (existing.length === 0) {
+            return { status: 'not-found', name };
+        }
+
+        await conn.write('/ip/hotspot/user/remove', [`=.id=${existing[0]['.id']}`]);
+
+        return { status: 'deleted', name };
+    } finally {
+        safeClose(conn);
+    }
+}
+
 module.exports = {
     disconnect,
     reconnect,
@@ -702,4 +763,6 @@ module.exports = {
     createHotspotProfile,
     updateHotspotProfile,
     deleteHotspotProfile,
+    createHotspotUser,
+    deleteHotspotUser,
 };
